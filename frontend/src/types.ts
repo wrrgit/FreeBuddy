@@ -4,12 +4,20 @@ export interface Member {
   id: string
   name: string
   cli: string
+  family: string
   model: string | null
   role: string
   color: string
   session_id: string | null
   enabled: boolean
   summary_only: boolean
+}
+
+export interface FamilyInfo {
+  family: string
+  label: string
+  clis: CliInfo[]
+  hint?: string
 }
 
 export interface Message {

@@ -35,12 +35,15 @@ ACTION_LABELS: dict[Action, str] = {
 class Member(BaseModel):
     """群成员：同一个 CLI 可以创建多个成员（不同模型 / 不同角色 / 独立会话）。
 
+    family 为 CLI 协议族：opencode_family / gemini_family / claude_family /
+    aider_family / generic_family。
     summary_only 成员不参与轮转发言，仅负责最终总结（如头脑风暴主持人）。
     """
 
     id: str = Field(default_factory=lambda: new_id("mem"))
     name: str
     cli: str = "deveco"
+    family: str = "opencode_family"
     model: Optional[str] = None
     role: str = ""
     color: str = "#409EFF"

@@ -1,4 +1,4 @@
-import type { CliInfo, Member, Message } from './types'
+import type { FamilyInfo, Member, Message } from './types'
 
 const json = async (res: Response) => {
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -25,10 +25,11 @@ export const api = {
   deleteMember: (id: string): Promise<{ ok: boolean; error?: string }> =>
     fetch(`/api/members/${id}`, { method: 'DELETE' }).then(json),
 
-  getClis: (): Promise<CliInfo[]> => fetch('/api/clis').then(json),
+  getFamilies: (): Promise<FamilyInfo[]> => fetch('/api/families').then(json),
 
-  getModels: (cli: string): Promise<{ models: string[]; error?: string }> =>
-    fetch(`/api/models?cli=${encodeURIComponent(cli)}`).then(json),
+  getModels: (cli: string, family: string): Promise<{ models: string[]; error?: string }> =>
+    fetch(`/api/models?cli=${encodeURIComponent(cli)}&family=${encodeURIComponent(family)}`)
+      .then(json),
 
   discuss: (question: string, maxRounds: number): Promise<{ ok: boolean; error?: string }> =>
     fetch('/api/discuss', {

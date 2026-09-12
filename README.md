@@ -7,10 +7,17 @@
 ## 特性
 
 - **多成员群聊**：成员 = CLI × 模型 × 角色。同一个 CLI 可以创建多个成员（不同模型 / 不同角色 / 独立会话）
+- **协议族适配**：支持 5 个 CLI 协议族，覆盖主流免费 AI 编程 CLI——
+  - `opencode_family`：**deveco**、**opencode**（内置免费模型，开箱即用）
+  - `gemini_family`：**gemini**（Google 免费额度）、**qwen**（Qwen Code，每日千次免费）
+  - `claude_family`：**claude**（Claude Code）
+  - `aider_family`：**aider**（配 OpenRouter 免费模型 / Ollama 本地模型）
+  - `generic_family`：**自定义命令模板**——任何能"无头：文本进 → 文本出"的 CLI，
+    填 `mycli ask {prompt_file}` 这类模板即可进群（占位符：`{prompt_file}` / `{prompt}` / `{model}`）
 - **结构化讨论**：每条消息带动作（发言 / 赞同 / 反对 / 追问 / 新话题 / 总结），反对必须指向具体消息 ID，点击徽章可跳转溯源
-- **分工与独立见解**：成员角色可自定义（研究员 / 评审员 / 魔鬼代言人…），prompt 中强制要求"不附和、不确定要明说"
+- **分工与独立见解**：成员角色可自定义（架构师 / 批判与性能官 / 安全合规专家 / 落地实施官…），prompt 中强制要求"不附和、不确定要明说"
+- **主持人调度**：第 1 轮按列表顺序（设计者先出草案），之后轮次**被反对/追问最多的成员优先回应**，其余随机；支持轮数上限、随时停止、运行中插话；主持人（summary_only）仅在最终轮输出可落地的技术架构方案
 - **事实与追溯**：消息要求携带 citations；每条消息记录 CLI、模型、session、token 成本、原始输出；会话全量落盘 JSONL（`backend/data/logs/`）
-- **主持人调度**：规则化轮转（首轮全员观点 → 逐轮表态 → 主持人总结），支持轮数上限、随时停止、运行中插话
 - **实时 Web UI**：Vue3 + OpenTiny，WebSocket 实时推送，成员面板可视化增删改
 
 ## 架构
@@ -64,15 +71,24 @@ npm run dev   # http://localhost:5173，自动代理 /api 与 /ws 到 8000
 
 ## 扩展新 CLI
 
-`app/adapter.py` 的适配器面向「`<cli> run --format json` + stdin」协议。
-支持该协议的 CLI（如 opencode 系）只需在 `main.py` 的 `SUPPORTED_CLIS` 中加入名字；
-协议不同的 CLI（如 `claude -p`、`codex exec`）需在 `adapter.py` 中新增对应的
-`build_cmd` 与事件解析分支。
+三种方式，按成本从低到高：
+
+1. **generic 模板**（零代码）：CLI 有任何无头用法即可，在成员编辑中选"自定义命令模板"，
+   填如 `mycli ask {prompt_file}`（prompt 自动写入临时文件）或 `mycli ask "{prompt}"`
+2. **加入现有协议族**（一行配置）：同构 CLI 只需在 `main.py` 的 `KNOWN_CLIS` 中登记。
+   例如新的 opencode fork、gemini fork（如 Qwen Code）
+3. **新增协议族**（一个函数）：在 `adapter.py` 中新增 `build_xxx` 命令构造与
+   `parse_xxx` 输出解析，注册到 `_BUILDERS` / `_PARSERS` 即可
+
+由于每轮讨论是**全量重放群聊记录**，会话恢复（session resume）只是 token 优化项，
+不是接入门槛——只要 CLI 能"接收一段文本 → 返回一段回复"就能参与讨论。
 
 ## 测试
 
 ```bash
 cd backend
-python test_e2e.py   # 解析器单测 + 2 成员真实群聊（1 轮 + 总结）
-python test_ws.py    # WebSocket 全链路（需先启动服务）
+python test_adapter.py    # 协议族命令构造与输出解析
+python test_schedule.py   # 调度逻辑（summary_only / 被点名优先）
+python test_e2e.py        # 2 成员真实群聊（1 轮 + 总结）
+python test_ws.py         # WebSocket 全链路（需先启动服务）
 ```

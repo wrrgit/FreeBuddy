@@ -11,11 +11,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .adapter import FAMILIES
 from .models import Member, Message
 from .orchestrator import Orchestrator
 from .store import Store
 
-SUPPORTED_CLIS = ["deveco", "opencode"]
+# 各协议族已知 CLI（generic_family 为自定义命令模板，无固定 CLI 名）
+KNOWN_CLIS: dict[str, list[str]] = {
+    "opencode_family": ["deveco", "opencode"],
+    "gemini_family": ["gemini", "qwen"],
+    "claude_family": ["claude"],
+    "aider_family": ["aider"],
+}
+FAMILY_LABELS: dict[str, str] = {
+    "opencode_family": "OpenCode 系（deveco / opencode）",
+    "gemini_family": "Gemini 系（gemini / qwen）",
+    "claude_family": "Claude Code",
+    "aider_family": "Aider",
+    "generic_family": "自定义命令模板",
+}
 
 app = FastAPI(title="multi-cli group chat")
 app.add_middleware(
@@ -113,6 +127,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
 class MemberIn(BaseModel):
     name: str
     cli: str = "deveco"
+    family: str = "opencode_family"
     model: Optional[str] = None
     role: str = ""
     color: str = "#409EFF"
@@ -158,17 +173,33 @@ async def delete_member(member_id: str) -> dict[str, bool]:
     return {"ok": len(_members) < before}
 
 
-@app.get("/api/clis")
-async def list_clis() -> list[dict[str, Any]]:
-    return [
-        {"name": name, "installed": shutil.which(name) is not None}
-        for name in SUPPORTED_CLIS
-    ]
+@app.get("/api/families")
+async def list_families() -> list[dict[str, Any]]:
+    """协议族与各自已知 CLI（含安装状态），供前端成员编辑使用。"""
+    result: list[dict[str, Any]] = []
+    for family in FAMILIES:
+        entry: dict[str, Any] = {
+            "family": family,
+            "label": FAMILY_LABELS.get(family, family),
+            "clis": [
+                {"name": name, "installed": shutil.which(name) is not None}
+                for name in KNOWN_CLIS.get(family, [])
+            ],
+        }
+        if family == "generic_family":
+            entry["hint"] = (
+                "命令模板，占位符：{prompt_file}=提示词临时文件路径（推荐），"
+                "{prompt}=提示词内联，{model}=模型名。例如：mycli ask {prompt_file}"
+            )
+        result.append(entry)
+    return result
 
 
 @app.get("/api/models")
-async def list_models(cli: str) -> dict[str, Any]:
-    if cli not in SUPPORTED_CLIS or shutil.which(cli) is None:
+async def list_models(cli: str, family: str = "opencode_family") -> dict[str, Any]:
+    if family not in KNOWN_CLIS or cli not in KNOWN_CLIS[family]:
+        return {"models": [], "error": "该协议族请手动填写模型名"}
+    if shutil.which(cli) is None:
         return {"models": [], "error": f"CLI 不可用: {cli}"}
     cached = _model_cache.get(cli)
     if cached:

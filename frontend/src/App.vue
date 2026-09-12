@@ -3,7 +3,7 @@
     <aside class="side">
       <MemberPanel
         :members="members"
-        :clis="clis"
+        :families="families"
         :locked="running"
         @changed="loadMembers"
       />
@@ -48,13 +48,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api } from './api'
-import type { CliInfo, Member, Message, WsEvent } from './types'
+import type { FamilyInfo, Member, Message, WsEvent } from './types'
 import ChatMessage from './components/ChatMessage.vue'
 import MemberPanel from './components/MemberPanel.vue'
 import Composer from './components/Composer.vue'
 
 const members = ref<Member[]>([])
-const clis = ref<CliInfo[]>([])
+const families = ref<FamilyInfo[]>([])
 const messages = ref<Message[]>([])
 const running = ref(false)
 const question = ref('')
@@ -166,7 +166,7 @@ const onClear = async () => {
 
 onMounted(async () => {
   await loadMembers()
-  clis.value = await api.getClis()
+  families.value = await api.getFamilies()
   connectWs()
 })
 
