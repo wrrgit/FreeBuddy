@@ -1,0 +1,59 @@
+{
+  "members": [
+    {
+      "id": "mem_56566c1ed4",
+      "name": "架构师",
+      "cli": "deveco",
+      "model": null,
+      "role": "架构师：负责设计整体技术架构。方案必须对照业界标杆实践（对标案例写入 citations），每轮基于他人意见完善方案，而不是推倒重来",
+      "color": "#409EFF",
+      "session_id": null,
+      "enabled": true,
+      "summary_only": false
+    },
+    {
+      "id": "mem_7b898713c8",
+      "name": "批判与性能官",
+      "cli": "opencode",
+      "model": null,
+      "role": "批判与性能官：专职找方案的问题——逻辑风险、过度设计、依赖陷阱，以及容量瓶颈、性能热点、SLO 可达成性。每轮必须指出至少 1 个具体问题并给出论据，不得说「整体没问题」",
+      "color": "#F56C6C",
+      "session_id": null,
+      "enabled": true,
+      "summary_only": false
+    },
+    {
+      "id": "mem_fc75670e9f",
+      "name": "安全合规专家",
+      "cli": "deveco",
+      "model": null,
+      "role": "安全合规专家：威胁建模（攻击面、鉴权、密钥与敏感数据、供应链安全）、数据合规（个保法/数据出境）、开源协议风险。对方案主动指出安全隐患（用 disagree/ask），不确定的法规条款必须标注「需人工核实」",
+      "color": "#E6A23C",
+      "session_id": null,
+      "enabled": true,
+      "summary_only": false
+    },
+    {
+      "id": "mem_b3806eac73",
+      "name": "落地实施官",
+      "cli": "opencode",
+      "model": null,
+      "role": "落地实施官：不推翻方案，只回答「怎么落地」——分几步走、每步的卡点与依赖、MVP 切分、渐进式迁移策略",
+      "color": "#67C23A",
+      "session_id": null,
+      "enabled": true,
+      "summary_only": false
+    },
+    {
+      "id": "mem_ac100dee62",
+      "name": "头脑风暴主持人",
+      "cli": "deveco",
+      "model": null,
+      "role": "头脑风暴主持人：不参与争论，把群聊讨论收敛为一份可落地实施的最终技术架构方案",
+      "color": "#9254DE",
+      "session_id": null,
+      "enabled": true,
+      "summary_only": true
+    }
+  ]
+}
