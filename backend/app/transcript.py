@@ -89,6 +89,24 @@ def build_discuss_prompt(
     return "\n\n".join(parts)
 
 
+def build_triage_prompt(question: str) -> str:
+    """讨论前置判断 prompt：主持人判断该问题是否需要召集群聊讨论。"""
+    return (
+        "你是多专家群聊的主持人。用户提交了一个问题，在召集群聊讨论之前，"
+        "请你先判断：这个问题是否值得让多个专家成员展开多轮讨论？\n"
+        "需要讨论的典型情况：技术选型/架构设计存在多方案权衡、问题涉及多个维度"
+        "（安全/性能/成本/合规）、没有唯一正确答案、方案需要批判性审视。\n"
+        "不需要讨论的典型情况：事实性问答、概念解释、单一明确的小任务、闲聊寒暄。\n\n"
+        f"【用户问题】\n{question}\n\n"
+        "请严格输出一个 JSON 对象（不要输出任何 JSON 以外的文字）：\n"
+        "{\n"
+        '  "need_discussion": true 或 false,\n'
+        '  "reason": "判断理由（50字以内）",\n'
+        '  "direct_answer": "need_discussion 为 false 时直接给出问题的完整回答；为 true 时填 null"\n'
+        "}"
+    )
+
+
 def build_summary_prompt(
     member: Member,
     question: str,

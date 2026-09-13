@@ -22,12 +22,14 @@ KNOWN_CLIS: dict[str, list[str]] = {
     "gemini_family": ["gemini", "qwen"],
     "claude_family": ["claude"],
     "aider_family": ["aider"],
+    "trae_family": ["traecli"],
 }
 FAMILY_LABELS: dict[str, str] = {
     "opencode_family": "OpenCode 系（deveco / opencode）",
     "gemini_family": "Gemini 系（gemini / qwen）",
     "claude_family": "Claude Code",
     "aider_family": "Aider",
+    "trae_family": "TraeCode CLI（traecli）",
     "generic_family": "自定义命令模板",
 }
 
@@ -226,6 +228,7 @@ async def list_models(cli: str, family: str = "opencode_family") -> dict[str, An
 class DiscussIn(BaseModel):
     question: str
     max_rounds: int = 3
+    skip_triage: bool = False
 
 
 @app.post("/api/discuss")
@@ -237,7 +240,8 @@ async def discuss(body: DiscussIn) -> dict[str, Any]:
     if not orchestrator.active_members:
         return {"ok": False, "error": "没有启用的群成员"}
     try:
-        orchestrator.start(body.question.strip(), body.max_rounds)
+        orchestrator.start(body.question.strip(), body.max_rounds,
+                           skip_triage=body.skip_triage)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True}

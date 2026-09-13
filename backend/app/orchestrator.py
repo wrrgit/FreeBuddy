@@ -33,6 +33,7 @@ class Orchestrator:
         self.messages: list[Message] = []
         self.question: str = ""
         self.max_rounds: int = 3
+        self.skip_triage: bool = False
         self.stop_event = asyncio.Event()
         self.running = False
         self.task: Optional[asyncio.Task] = None
@@ -48,13 +49,14 @@ class Orchestrator:
         """参与轮转发言的成员（不含仅总结的主持人）。"""
         return [m for m in self.members if m.enabled and not m.summary_only]
 
-    def start(self, question: str, max_rounds: int) -> None:
+    def start(self, question: str, max_rounds: int, skip_triage: bool = False) -> None:
         if self.running:
             raise RuntimeError("讨论已在进行中")
         if not self.speaking_members:
             raise RuntimeError("没有可发言的群成员")
         self.question = question
         self.max_rounds = max(1, max_rounds)
+        self.skip_triage = skip_triage
         self.stop_event = asyncio.Event()
         self.running = True
         self.task = asyncio.create_task(self._run())
@@ -99,6 +101,28 @@ class Orchestrator:
         self.messages.append(msg)
         await self.broadcast({"type": "message", "message": msg.model_dump()})
 
+    async def _triage(self) -> Optional[tuple[Member, bool, str, str]]:
+        """讨论前置判断：由主持人判断该问题是否需要群聊讨论。
+
+        返回 (判断成员, need_discussion, reason, direct_answer)；
+        判断失败（CLI 报错 / 无可用成员）返回 None，调用方应放行走讨论（fail-open）。
+        """
+        triager = self._pick_moderator()
+        if triager is None:
+            return None
+        await self.broadcast(
+            {"type": "typing", "member_id": triager.id,
+             "member_name": triager.name, "round": 0, "triage": True}
+        )
+        result = await adapter.run_cli(
+            triager, transcript.build_triage_prompt(self.question),
+            timeout=self.cli_timeout,
+        )
+        if result.error or not result.text:
+            return None
+        need, reason, answer = parser.parse_triage(result.text)
+        return triager, need, reason, answer
+
     async def _run(self) -> None:
         try:
             user_msg = Message(
@@ -109,6 +133,31 @@ class Orchestrator:
                 content=self.question,
             )
             await self._push_message(user_msg)
+
+            if not self.skip_triage:
+                triage = await self._triage()
+                if triage is not None:
+                    triager, need, reason, answer = triage
+                    await self.broadcast(
+                        {"type": "triage", "need_discussion": need, "reason": reason}
+                    )
+                    if not need and answer:
+                        # 无需讨论：主持人直接回答，不进入轮转
+                        await self._push_message(Message(
+                            member_id=triager.id,
+                            member_name=triager.name,
+                            round=0,
+                            action=Action.REPLY,
+                            content=answer,
+                            meta={
+                                "cli": triager.cli,
+                                "model": triager.model,
+                                "triage_reason": reason,
+                            },
+                        ))
+                        await self.broadcast({"type": "finished", "stopped": False})
+                        return
+                    # need=False 但没给答案，或 need=True：继续走讨论
 
             for round_no in range(1, self.max_rounds + 1):
                 if self.stop_event.is_set():

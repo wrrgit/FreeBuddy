@@ -93,3 +93,34 @@ def parse_reply(text: str, valid_msg_ids: set[str] | None = None) -> ParsedReply
         citations=citations,
         raw=text,
     )
+
+
+def parse_triage(text: str) -> tuple[bool, str, str]:
+    """解析主持人「是否需要讨论」的判断结果。
+
+    返回 (need_discussion, reason, direct_answer)。
+    容错原则：解析失败、字段缺失一律返回 need=True（放行走讨论，fail-open），
+    宁可多讨论也不要在没把握时替用户拒绝讨论。
+    """
+    text = (text or "").strip()
+    if not text:
+        return True, "", ""
+    obj = _extract_json(text)
+    if obj is None:
+        return True, "", ""
+
+    need = obj.get("need_discussion", True)
+    if isinstance(need, bool):
+        pass
+    elif isinstance(need, str):
+        need = need.strip().lower() not in ("false", "no", "0", "false。")
+    else:
+        need = True
+
+    reason = obj.get("reason")
+    reason = str(reason).strip() if isinstance(reason, str) else ""
+
+    answer = obj.get("direct_answer")
+    answer = str(answer).strip() if isinstance(answer, str) else ""
+
+    return need, reason, answer

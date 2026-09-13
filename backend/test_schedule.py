@@ -81,4 +81,61 @@ assert "头脑风暴主持人" in prompt
 assert "实施路线" in prompt and "待人工决策项" in prompt
 print("6. 总结 prompt 为最终架构方案模板 OK")
 
+# --- 7. triage 判断解析（容错 + fail-open）---
+from app.parser import parse_triage
+
+need, reason, answer = parse_triage(
+    '{"need_discussion": false, "reason": "事实性问题", "direct_answer": "Go 是 Google 开发的编译型语言"}')
+assert need is False and reason == "事实性问题" and "Google" in answer, (need, reason, answer)
+
+need, _, _ = parse_triage('{"need_discussion": true, "reason": "多方案权衡", "direct_answer": null}')
+assert need is True
+
+need, _, _ = parse_triage("这问题挺复杂的，我觉得得聊聊")   # 非 JSON → 放行讨论
+assert need is True
+
+need, _, _ = parse_triage('```json\n{"need_discussion": "false", "reason": "r", "direct_answer": "a"}\n```')
+assert need is False   # 字符串 "false" 容错
+
+need, _, answer2 = parse_triage('{"need_discussion": false, "reason": "r"}')  # 缺 direct_answer
+assert need is False and answer2 == ""
+print("7. triage 判断解析（JSON块/裸JSON/非JSON/字符串布尔/缺字段 全部容错） OK")
+
+# --- 8. triage prompt 模板 ---
+from app.transcript import build_triage_prompt
+tp = build_triage_prompt("如何设计一个限流中间件？")
+assert "是否" in tp and "need_discussion" in tp and "如何设计一个限流中间件？" in tp
+assert "direct_answer" in tp
+print("8. triage prompt 模板 OK")
+
+# --- 9. _triage：无需讨论返回直接答案，CLI 失败 fail-open ---
+import asyncio
+from app import adapter as adapter_mod
+from app.adapter import CliResult
+
+
+async def fake_ok(member, prompt, timeout=600.0):
+    assert "need_discussion" in prompt, "triage 必须走专用 prompt"
+    return CliResult(text='{"need_discussion": false, "reason": "事实问答", "direct_answer": "直接答案"}')
+
+
+async def fake_err(member, prompt, timeout=600.0):
+    return CliResult(error="CLI 挂了")
+
+
+orig_run_cli = adapter_mod.run_cli
+adapter_mod.run_cli = fake_ok
+try:
+    r = asyncio.run(orch._triage())
+    assert r is not None, "正常判断不应返回 None"
+    triager, need, reason, answer3 = r
+    assert triager.summary_only and triager.name == "头脑风暴主持人", triager.name  # 判断者=主持人
+    assert need is False and answer3 == "直接答案" and reason == "事实问答"
+    adapter_mod.run_cli = fake_err
+    r2 = asyncio.run(orch._triage())
+    assert r2 is None, "CLI 失败应返回 None（调用方放行走讨论）"
+finally:
+    adapter_mod.run_cli = orig_run_cli
+print("9. _triage 无需讨论路径 + 失败放行（fail-open） OK")
+
 print("\n全部调度逻辑测试通过")

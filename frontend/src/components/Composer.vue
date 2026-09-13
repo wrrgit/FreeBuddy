@@ -24,6 +24,10 @@
           <tiny-select v-model="rounds" style="width: 70px">
             <tiny-option v-for="n in 5" :key="n" :value="n" :label="`${n}`" />
           </tiny-select>
+          <label class="skip-triage">
+            <input type="checkbox" v-model="skipTriage" />
+            跳过判断，直接讨论
+          </label>
         </div>
         <tiny-button v-if="running" type="primary" :disabled="!text.trim()" @click="onInterject">
           插话
@@ -45,7 +49,7 @@ import { api } from '../api'
 
 const props = defineProps<{ running: boolean; hasMessages?: boolean }>()
 const emit = defineEmits<{
-  (e: 'discuss', question: string, rounds: number): void
+  (e: 'discuss', question: string, rounds: number, skipTriage: boolean): void
   (e: 'stop'): void
   (e: 'interject', content: string): void
   (e: 'clear'): void
@@ -53,6 +57,7 @@ const emit = defineEmits<{
 
 const text = ref('')
 const rounds = ref(2)
+const skipTriage = ref(false)
 
 const onEnter = () => {
   if (props.running) onInterject()
@@ -62,7 +67,7 @@ const onEnter = () => {
 const onDiscuss = () => {
   const q = text.value.trim()
   if (!q) return
-  emit('discuss', q, rounds.value)
+  emit('discuss', q, rounds.value, skipTriage.value)
   text.value = ''
 }
 
@@ -111,5 +116,19 @@ const onInterject = () => {
   font-size: 12px;
   color: #909399;
   white-space: nowrap;
+}
+.skip-triage {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #909399;
+  white-space: nowrap;
+  cursor: pointer;
+  margin-left: 6px;
+}
+.skip-triage input {
+  margin: 0;
+  cursor: pointer;
 }
 </style>

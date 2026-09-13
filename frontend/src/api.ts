@@ -31,11 +31,15 @@ export const api = {
     fetch(`/api/models?cli=${encodeURIComponent(cli)}&family=${encodeURIComponent(family)}`)
       .then(json),
 
-  discuss: (question: string, maxRounds: number): Promise<{ ok: boolean; error?: string }> =>
+  discuss: (
+    question: string,
+    maxRounds: number,
+    skipTriage = false,
+  ): Promise<{ ok: boolean; error?: string }> =>
     fetch('/api/discuss', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, max_rounds: maxRounds }),
+      body: JSON.stringify({ question, max_rounds: maxRounds, skip_triage: skipTriage }),
     }).then(json),
 
   stop: (): Promise<{ ok: boolean }> => fetch('/api/stop', { method: 'POST' }).then(json),

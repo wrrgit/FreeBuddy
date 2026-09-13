@@ -20,8 +20,13 @@
         <div class="question" v-if="question">主题：{{ question }}</div>
       </header>
       <section class="stream" ref="streamRef">
-        <div v-if="messages.length === 0" class="empty">
+        <div v-if="messages.length === 0 && !triageInfo" class="empty">
           输入一个问题，让多个 CLI 成员开始讨论
+        </div>
+        <div v-if="triageInfo" class="triage" :class="{ skip: !triageInfo.need }">
+          <template v-if="triageInfo.need">主持人判断：该问题值得群聊讨论</template>
+          <template v-else>主持人判断：无需讨论，已直接回答</template>
+          <span v-if="triageInfo.reason"> —— {{ triageInfo.reason }}</span>
         </div>
         <ChatMessage
           v-for="msg in messages"
@@ -61,6 +66,7 @@ const question = ref('')
 const currentRound = ref(0)
 const maxRounds = ref(3)
 const typingMember = ref('')
+const triageInfo = ref<{ need: boolean; reason: string } | null>(null)
 const streamRef = ref<HTMLElement>()
 
 let ws: WebSocket | null = null
@@ -113,6 +119,13 @@ const handleEvent = (ev: WsEvent) => {
       maxRounds.value = ev.max_rounds ?? maxRounds.value
       typingMember.value = ''
       break
+    case 'triage':
+      triageInfo.value = {
+        need: ev.need_discussion ?? true,
+        reason: ev.reason ?? '',
+      }
+      scrollToBottom()
+      break
     case 'finished':
       running.value = false
       typingMember.value = ''
@@ -121,6 +134,7 @@ const handleEvent = (ev: WsEvent) => {
       messages.value = []
       question.value = ''
       typingMember.value = ''
+      triageInfo.value = null
       break
     case 'error':
       running.value = false
@@ -139,8 +153,8 @@ const connectWs = () => {
   }
 }
 
-const onDiscuss = async (q: string, rounds: number) => {
-  const res = await api.discuss(q, rounds)
+const onDiscuss = async (q: string, rounds: number, skipTriage: boolean) => {
+  const res = await api.discuss(q, rounds, skipTriage)
   if (!res.ok) {
     alert(res.error ?? '启动失败')
     return
@@ -148,6 +162,7 @@ const onDiscuss = async (q: string, rounds: number) => {
   running.value = true
   maxRounds.value = rounds
   currentRound.value = 0
+  triageInfo.value = null
 }
 
 const onStop = async () => {
@@ -265,6 +280,19 @@ body,
 .typing .dot {
   color: #409eff;
   animation: blink 1s infinite;
+}
+.triage {
+  font-size: 12px;
+  color: #909399;
+  background: #f4f4f5;
+  border-radius: 8px;
+  padding: 6px 12px;
+  align-self: center;
+  text-align: center;
+}
+.triage.skip {
+  color: #67c23a;
+  background: #f0f9eb;
 }
 @keyframes blink {
   50% {

@@ -8,8 +8,11 @@
   claude_family    claude —— `claude -p --output-format json`，prompt 走 stdin，
                    输出单个 JSON（result / session_id / cost），支持 --resume
   aider_family     aider —— `aider --message <prompt>`，纯文本输出，无会话恢复
+  trae_family      traecli —— `traecli exec --json -o <file> -`，prompt 走 stdin，
+                   JSONL 事件流输出到 stdout，最终回复写入 -o 指定文件（格式未公开，
+                   故不解析 stdout 事件，只读文件）；无 headless 会话恢复
   generic_family   自定义命令模板：{prompt_file} / {prompt} / {model} 占位符，
-                   prompt 写入临时文件，stdout 全量作为回复
+                    prompt 写入临时文件，stdout 全量作为回复
 """
 from __future__ import annotations
 
@@ -32,9 +35,11 @@ FAMILY_OPENCODE = "opencode_family"
 FAMILY_GEMINI = "gemini_family"
 FAMILY_CLAUDE = "claude_family"
 FAMILY_AIDER = "aider_family"
+FAMILY_TRAE = "trae_family"
 FAMILY_GENERIC = "generic_family"
 
-FAMILIES = [FAMILY_OPENCODE, FAMILY_GEMINI, FAMILY_CLAUDE, FAMILY_AIDER, FAMILY_GENERIC]
+FAMILIES = [FAMILY_OPENCODE, FAMILY_GEMINI, FAMILY_CLAUDE, FAMILY_AIDER,
+            FAMILY_TRAE, FAMILY_GENERIC]
 
 
 @dataclass
@@ -54,13 +59,16 @@ def _win(cmd: list[str]) -> list[str]:
 
 class BuiltCommand:
     """一次成员调用的完整命令：cmd 为参数列表；stdin_data 为标准输入内容（可空）；
-    prompt_file 若非 None，表示 prompt 已写入该文件（generic 模板用完负责清理）。"""
+    prompt_file 若非 None，表示 prompt 已写入该文件（generic 模板用完负责清理）；
+    output_file 若非 None，表示 CLI 会把最终回复写入该文件（trae -o，用完负责清理）。"""
 
     def __init__(self, cmd: list[str], stdin_data: str = "",
-                 prompt_file: Optional[Path] = None):
+                 prompt_file: Optional[Path] = None,
+                 output_file: Optional[Path] = None):
         self.cmd = cmd
         self.stdin_data = stdin_data
         self.prompt_file = prompt_file
+        self.output_file = output_file
 
 
 # ---------- 各协议族命令构造 ----------
@@ -102,6 +110,21 @@ def _build_aider(member: Member, prompt: str) -> BuiltCommand:
     return BuiltCommand(_win(cmd))
 
 
+def _build_trae(member: Member, prompt: str) -> BuiltCommand:
+    # traecli exec：-o 把最终回复写入文件（JSONL 事件格式未公开，不解析 stdout），
+    # "-" 表示 prompt 从 stdin 读取；read-only 沙箱避免讨论型任务产生写操作审批。
+    out_f = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False,
+                                         encoding="utf-8")
+    out_f.close()
+    cmd = [member.cli, "exec", "--json", "--skip-git-repo-check",
+           "-s", "read-only", "-o", out_f.name]
+    if member.model:
+        cmd += ["-m", member.model]
+    cmd += ["-"]
+    return BuiltCommand(_win(cmd), stdin_data=prompt,
+                        output_file=Path(out_f.name))
+
+
 def _build_generic(member: Member, prompt: str) -> BuiltCommand:
     """member.cli 为命令模板，支持占位符：
     {prompt_file} - prompt 写入的临时文件路径（推荐，无长度限制）
@@ -134,6 +157,7 @@ _BUILDERS = {
     FAMILY_GEMINI: _build_gemini,
     FAMILY_CLAUDE: _build_claude,
     FAMILY_AIDER: _build_aider,
+    FAMILY_TRAE: _build_trae,
     FAMILY_GENERIC: _build_generic,
 }
 
@@ -270,6 +294,31 @@ def parse_aider(stdout: str) -> CliResult:
     return CliResult()
 
 
+def parse_trae(stdout: str) -> CliResult:
+    """traecli exec --json 输出 JSONL 事件流，但事件 schema 未公开。
+    这里仅尽力提取 session_id；正文依赖 -o 输出文件（run_cli 中回填）。"""
+    result = CliResult()
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        result.events.append(ev)
+        if not isinstance(ev, dict):
+            continue
+        sid = ev.get("session_id") or ev.get("sessionID") or ev.get("sessionId")
+        if sid:
+            result.session_id = str(sid)
+        if ev.get("error") or ev.get("is_error"):
+            msg = ev.get("error") or ev.get("message") or ""
+            if msg and not result.error:
+                result.error = str(msg)
+    return result
+
+
 def parse_generic(stdout: str) -> CliResult:
     text = _ANSI_RE.sub("", stdout).strip()
     return CliResult(text=text)
@@ -280,11 +329,20 @@ _PARSERS = {
     FAMILY_GEMINI: parse_gemini,
     FAMILY_CLAUDE: parse_claude,
     FAMILY_AIDER: parse_aider,
+    FAMILY_TRAE: parse_trae,
     FAMILY_GENERIC: parse_generic,
 }
 
 
 # ---------- 统一入口 ----------
+
+def _cleanup_files(built: BuiltCommand) -> None:
+    """清理临时文件（output_file 若尚有内容未读取，由调用方先读再清理）。"""
+    if built.prompt_file is not None:
+        built.prompt_file.unlink(missing_ok=True)
+    if built.output_file is not None:
+        built.output_file.unlink(missing_ok=True)
+
 
 async def run_cli(member: Member, prompt: str, timeout: float = DEFAULT_TIMEOUT) -> CliResult:
     """以无头模式运行一次成员 CLI，返回解析结果。"""
@@ -300,8 +358,7 @@ async def run_cli(member: Member, prompt: str, timeout: float = DEFAULT_TIMEOUT)
             stderr=asyncio.subprocess.PIPE,
         )
     except FileNotFoundError:
-        if built.prompt_file is not None:
-            built.prompt_file.unlink(missing_ok=True)
+        _cleanup_files(built)
         return CliResult(error=f"CLI 未安装或不在 PATH 中: {member.cli}")
     try:
         out, err = await asyncio.wait_for(
@@ -312,16 +369,20 @@ async def run_cli(member: Member, prompt: str, timeout: float = DEFAULT_TIMEOUT)
             proc.kill()
         except ProcessLookupError:
             pass
-        if built.prompt_file is not None:
-            built.prompt_file.unlink(missing_ok=True)
+        _cleanup_files(built)
         return CliResult(error=f"运行超时（>{timeout:.0f}s）")
-    finally:
-        if built.prompt_file is not None:
-            built.prompt_file.unlink(missing_ok=True)
 
     stdout = out.decode("utf-8", errors="replace")
     parser = _PARSERS.get(member.family, parse_generic)
     result = parser(stdout)
+    if built.output_file is not None:
+        if not result.text and built.output_file.exists():
+            try:
+                result.text = built.output_file.read_text(
+                    encoding="utf-8", errors="replace").strip()
+            except OSError:
+                pass
+        built.output_file.unlink(missing_ok=True)
     if not result.text and not result.error:
         stderr = err.decode("utf-8", errors="replace").strip()
         if proc.returncode != 0:

@@ -6,7 +6,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from app.adapter import (
     FAMILY_AIDER, FAMILY_CLAUDE, FAMILY_GEMINI, FAMILY_GENERIC, FAMILY_OPENCODE,
+    FAMILY_TRAE,
     build_command, parse_aider, parse_claude, parse_gemini, parse_opencode,
+    parse_trae,
 )
 from app.models import Member
 
@@ -52,7 +54,27 @@ s = flat(built.cmd)
 assert "--message 观点内容" in s and "--yes-always" in s and "--no-git" in s and "--model deepseek" in s, s
 print(f"4. aider 族命令: {s[:80]}... OK")
 
-# --- 5. generic 族（占位符）---
+# --- 5. trae 族（exec --json -o <file>，prompt 走 stdin）---
+m = member(FAMILY_TRAE, "traecli", model="doubao-test")
+built = build_command(m, "长prompt" * 500)
+s = flat(built.cmd)
+assert "traecli exec --json" in s and "--skip-git-repo-check" in s, s
+assert "-s read-only" in s and "-m doubao-test" in s and s.endswith(" -"), s
+assert built.stdin_data == "长prompt" * 500, "trae 长 prompt 必须走 stdin"
+assert built.output_file is not None, "trae 需 -o 输出文件承接最终回复"
+assert "-o" in built.cmd and str(built.output_file) in built.cmd
+of = built.output_file
+of.write_text("最终回复内容", encoding="utf-8")
+
+tr = parse_trae('{"type":"session_start","session_id":"ts-1"}\n'
+                'not-json\n'
+                '{"type":"error","error":"模型未配置"}')
+assert tr.session_id == "ts-1" and tr.error == "模型未配置", (tr.session_id, tr.error)
+assert not tr.text, "trae 正文不来自 stdout"
+of.unlink()
+print(f"5. trae 族命令: {s[:80]}... OK（prompt 走 stdin，正文走 -o 文件）")
+
+# --- 6. generic 族（占位符）---
 m = member(FAMILY_GENERIC, cli="mycli ask {prompt_file} --model {model}", model="m1")
 built = build_command(m, "提示词内容")
 s = flat(built.cmd)
@@ -61,9 +83,9 @@ assert built.prompt_file is not None and built.prompt_file.exists()
 pf = built.prompt_file
 assert pf.read_text(encoding="utf-8") == "提示词内容"
 pf.unlink()
-print(f"5. generic 族命令: {s} OK（prompt 已写临时文件）")
+print(f"6. generic 族命令: {s} OK（prompt 已写临时文件）")
 
-# --- 6. 各族输出解析 ---
+# --- 7. 各族输出解析 ---
 oc = parse_opencode('{"type":"text","sessionID":"s1","part":{"text":"回复"}}\n'
                     '{"type":"step_finish","sessionID":"s1","part":{"tokens":{"output":5},"cost":0.01}}')
 assert oc.text == "回复" and oc.session_id == "s1" and oc.cost == 0.01
@@ -82,13 +104,13 @@ assert cl.tokens is not None and cl.tokens["output"] == 20
 ai = parse_aider("Aider v0.1\n\n一些日志行\n\n" + "这是助手的回复内容" * 10 + "\n")
 assert "助手的回复内容" in ai.text and "Aider v0.1" not in ai.text, ai.text[:50]
 
-print("6. 四族输出解析 OK")
+print("7. 五族输出解析 OK")
 
-# --- 7. 未知协议族报错 ---
+# --- 8. 未知协议族报错 ---
 try:
     build_command(member("bad_family"), "x")
     assert False, "应抛异常"
 except ValueError:
-    print("7. 未知协议族正确报错 OK")
+    print("8. 未知协议族正确报错 OK")
 
 print("\n适配器全部测试通过")

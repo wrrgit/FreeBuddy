@@ -47,13 +47,24 @@ export interface CliInfo {
 }
 
 export interface WsEvent {
-  type: 'init' | 'message' | 'typing' | 'round_start' | 'finished' | 'cleared' | 'error'
+  type:
+    | 'init'
+    | 'message'
+    | 'typing'
+    | 'round_start'
+    | 'triage'
+    | 'finished'
+    | 'cleared'
+    | 'error'
   message?: Message
   member_id?: string
   member_name?: string
   round?: number
   max_rounds?: number
   summary?: boolean
+  triage?: boolean
+  need_discussion?: boolean
+  reason?: string
   running?: boolean
   question?: string
   messages?: Message[]

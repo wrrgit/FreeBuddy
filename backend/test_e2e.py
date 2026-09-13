@@ -45,7 +45,9 @@ async def main() -> None:
     print("解析器 OK")
 
     print("\n=== 测试: 真实群聊 (1轮+总结) ===")
-    orch.start("Python 和 Go 哪个更适合写命令行工具？请简短回答。", max_rounds=1)
+    # skip_triage=True：本测试固定验证讨论链路本身，跳过「是否需要讨论」前置判断
+    orch.start("Python 和 Go 哪个更适合写命令行工具？请简短回答。", max_rounds=1,
+               skip_triage=True)
     assert orch.task is not None
     await orch.task
 
